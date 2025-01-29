@@ -105,13 +105,13 @@ class AlertManager:
 
     def get_trade_size_label(self, amount_usd: float) -> str:
         """Get the appropriate size label based on trade amount in USD."""
-        if amount_usd < 1000:  # Less than $1K
+        if amount_usd <= 100:  # $1 - $100
             return "🦐 Shrimp"
-        elif amount_usd < 10000:  # $1K - $10K
-            return "�� Fish"
-        elif amount_usd < 50000:  # $10K - $50K
+        elif amount_usd <= 1000:  # $101 - $1,000
+            return "🐟 Fish"
+        elif amount_usd <= 2000:  # $1,001 - $2,000
             return "🐬 Dolphin"
-        else:  # $50K+
+        else:  # $2,001+
             return "🐋 Whale"
 
     def format_trade_message(self, trade_data: Dict, ticker: str) -> str:
