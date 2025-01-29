@@ -125,4 +125,30 @@ class GeckoTerminalAPI:
                     return None
         except Exception as e:
             logger.error(f"Error fetching token pools: {str(e)}")
+            return None
+
+    async def get_pool_trades(self, pool_address: str) -> Dict:
+        """Get recent trades for a specific pool."""
+        # Remove network prefix if present
+        if '_' in pool_address:
+            pool_address = pool_address.split('_')[1]
+            
+        endpoint = f"{self.BASE_URL}/networks/ronin/pools/{pool_address}/trades"
+        headers = {
+            "accept": "application/json"
+        }
+        
+        try:
+            logger.debug(f"Fetching trades for pool {pool_address}")
+            async with self.session.get(endpoint, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.debug(f"Pool trades response: {data}")
+                    return data
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Failed to get pool trades: Status {response.status}, Response: {error_text}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error fetching pool trades: {str(e)}")
             return None 
