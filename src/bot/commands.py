@@ -67,7 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/pools - List of top Ronin pools\n"
             "/price <token_address> - Get detailed price info\n\n"
             "⚡️ Trade Alerts:\n"
-            "/alert <token_address> <ticker> [buy|sell] [min_amount] - Set alerts\n"
+            "/alert <token_address> [buy|sell] [min_amount] - Set alerts\n"
             "/removealert <token_address> - Remove alerts\n"
             "/activealerts - View your active alerts\n"
             "/help - Show this help message\n\n"
@@ -79,10 +79,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🐋 Whale: $2,001+\n\n"
             "📝 Alert Examples:\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            "• /alert 0x123... TOKEN - Track all trades\n"
-            "• /alert 0x123... TOKEN buy - Track only buys\n"
-            "• /alert 0x123... TOKEN sell 100 - Track sells of 100+ tokens\n"
-            "• /alert 0x123... TOKEN buy 50 - Track buys of 50+ tokens\n\n"
+            "• /alert 0x123... - Track all trades\n"
+            "• /alert 0x123... buy - Track only buys\n"
+            "• /alert 0x123... sell 100 - Track sells of 100+ tokens\n"
+            "• /alert 0x123... buy 50 - Track buys of 50+ tokens\n\n"
+            "💡 Alert Features:\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "• Auto-fetches token name and symbol\n"
+            "• Includes token image in alerts\n"
+            "• Shows trade size category\n"
+            "• Monitors most liquid pool\n"
+            "• Real-time price and value\n\n"
             "Made with 💜 by KEK Terminal"
         )
         await update.message.reply_text(welcome_message)
@@ -321,104 +328,86 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message)
 
 async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Set up an alert for a token's trades."""
-    if not context.args or len(context.args) < 2:
+    """Set up an alert for a token."""
+    if not context.args:
         await update.message.reply_text(
-            "⚡️ KEK Terminal Trade Alerts\n"
+            "⚡️ KEK Terminal - Trade Alerts\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "Usage: /alert <token_address> <ticker> [buy|sell] [min_amount]\n\n"
-            "🏆 Trade Size Categories:\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "🦐 Shrimp: $1 - $100\n"
-            "🐟 Fish: $101 - $1,000\n"
-            "🐬 Dolphin: $1,001 - $2,000\n"
-            "🐋 Whale: $2,001+\n\n"
-            "📝 Examples:\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "• /alert 0x123... TOKEN - Track all trades\n"
-            "• /alert 0x123... TOKEN buy - Track only buys\n"
-            "• /alert 0x123... TOKEN sell 100 - Track sells of 100+ tokens\n"
-            "• /alert 0x123... TOKEN buy 50 - Track buys of 50+ tokens"
+            "❌ Please provide the token address.\n"
+            "Usage: /alert <token_address> [buy|sell] [min_amount]"
         )
         return
 
     token_address = context.args[0].lower()
-    ticker = context.args[1].upper()
-
-    # Parse optional arguments
-    trade_type = None
-    min_amount = 0
-
-    if len(context.args) > 2:
-        trade_type = context.args[2].lower()
-        if trade_type not in ['buy', 'sell']:
-            await update.message.reply_text("❌ Trade type must be 'buy' or 'sell'")
-            return
-
-    if len(context.args) > 3:
-        try:
-            min_amount = float(context.args[3])
-            if min_amount < 0:
-                await update.message.reply_text("❌ Minimum amount must be positive")
-                return
-        except ValueError:
-            await update.message.reply_text("❌ Invalid minimum amount")
-            return
+    trade_type = context.args[1].lower() if len(context.args) > 1 else None
+    min_amount = float(context.args[2]) if len(context.args) > 2 else 0
 
     # Remove ronin_ prefix if present
     if token_address.startswith('ronin_'):
         token_address = token_address[6:]
 
-    chat_id = update.effective_chat.id
-    
-    # Check if alert already exists
-    existing_alert = context.bot_data.get('alert_manager').get_alert(chat_id, token_address)
-    if existing_alert:
-        await update.message.reply_text(f"⚠️ Alert for {ticker} is already active!")
+    # Get alert manager from bot data
+    alert_manager = context.application.bot_data.get('alert_manager')
+    if not alert_manager:
+        await update.message.reply_text("❌ Alert system is not initialized.")
         return
 
     async with GeckoTerminalAPI() as api:
-        # Get the most liquid pool for the token
-        pools_data = await api.get_token_pools(token_address)
-        if not pools_data or "data" not in pools_data or not pools_data["data"]:
-            await update.message.reply_text("❌ No pools found for this token. Make sure the address is correct.")
+        # Get token info to fetch name, symbol and image URL
+        token_info = await api.get_token_info(token_address)
+        if not token_info or 'data' not in token_info:
+            await update.message.reply_text("❌ Failed to fetch token information.")
             return
 
-        # Get the most liquid pool (first in the list)
-        pool = pools_data["data"][0]
-        # Get the full pool ID including network prefix
-        pool_address = pool["id"]  # This will be in format "ronin_xxxxx"
+        token_data = token_info['data']['attributes']
+        token_name = token_data.get('name', '')
+        token_symbol = token_data.get('symbol', '')
+        image_url = token_data.get('image_url')
 
-        # Add the alert
-        alert_manager = context.bot_data.get('alert_manager')
-        alert_manager.add_alert(chat_id, token_address, ticker, pool_address, trade_type, min_amount)
+        # Format the token display name
+        ticker = f"{token_name} ({token_symbol})"
 
-        # Get pool details for confirmation message
-        pool_details = pool["attributes"]
-        base_token = next((t for t in pools_data.get("included", []) if t["type"] == "token" and t["id"] == pool["relationships"]["base_token"]["data"]["id"]), None)
-        quote_token = next((t for t in pools_data.get("included", []) if t["type"] == "token" and t["id"] == pool["relationships"]["quote_token"]["data"]["id"]), None)
+        # Get token pools to find the most liquid one
+        pools_data = await api.get_token_pools(token_address)
+        if not pools_data or 'data' not in pools_data or not pools_data['data']:
+            await update.message.reply_text("❌ Failed to find pools for this token.")
+            return
+
+        # Find the most liquid pool
+        most_liquid_pool = None
+        highest_liquidity = 0
+        for pool in pools_data['data']:
+            liquidity = float(pool['attributes'].get('reserve_in_usd', 0))
+            if liquidity > highest_liquidity:
+                highest_liquidity = liquidity
+                most_liquid_pool = pool
+
+        if not most_liquid_pool:
+            await update.message.reply_text("❌ No valid pool found for this token.")
+            return
+
+        pool_address = most_liquid_pool['id'].replace('ronin_', '')
+
+        # Add the alert with image URL
+        alert_manager.add_alert(
+            update.effective_chat.id,
+            token_address,
+            ticker,
+            pool_address,
+            trade_type,
+            min_amount,
+            image_url
+        )
+
+        # Format response message
+        trade_type_msg = f" ({trade_type.upper()} only)" if trade_type else ""
+        min_amount_msg = f" (min. {min_amount} {token_symbol})" if min_amount > 0 else ""
         
-        if base_token and quote_token:
-            base_symbol = base_token["attributes"]["symbol"]
-            quote_symbol = quote_token["attributes"]["symbol"]
-            message = (
-                f"✅ Alert set for {ticker}!\n"
-                f"Monitoring pool: {base_symbol}/{quote_symbol}\n"
-            )
-            if trade_type:
-                message += f"Trade type: {trade_type.upper()} only\n"
-            if min_amount > 0:
-                message += f"Minimum amount: {min_amount} {ticker}\n"
-            message += "You will receive notifications for new trades."
-            await update.message.reply_text(message)
-        else:
-            message = f"✅ Alert set for {ticker}!\n"
-            if trade_type:
-                message += f"Trade type: {trade_type.upper()} only\n"
-            if min_amount > 0:
-                message += f"Minimum amount: {min_amount} {ticker}\n"
-            message += "You will receive notifications for new trades."
-            await update.message.reply_text(message)
+        await update.message.reply_text(
+            f"✅ Alert set for {ticker}{trade_type_msg}{min_amount_msg}\n"
+            f"Token Address: {token_address}\n"
+            f"Pool Address: {pool_address}"
+        )
 
 async def removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove an alert for a token."""

@@ -7,13 +7,14 @@ logger = logging.getLogger(__name__)
 
 class AlertManager:
     def __init__(self):
-        # Structure: {chat_id: {token_address: {'ticker': str, 'pool_address': str, 'last_trade_id': str, 'last_check': timestamp, 'trade_type': str, 'min_amount': float}}}
+        # Structure: {chat_id: {token_address: {'ticker': str, 'pool_address': str, 'last_trade_id': str, 'last_check': timestamp, 'trade_type': str, 'min_amount': float, 'image_url': str}}}
         self.alerts = {}
         
-    def add_alert(self, chat_id: int, token_address: str, ticker: str, pool_address: str, trade_type: str = None, min_amount: float = 0) -> bool:
+    def add_alert(self, chat_id: int, token_address: str, ticker: str, pool_address: str, trade_type: str = None, min_amount: float = 0, image_url: str = None) -> bool:
         """Add a new alert for a token in a chat.
         trade_type: 'buy', 'sell', or None (for both)
         min_amount: minimum trade amount to report (0 for all trades)
+        image_url: URL of the token's image
         """
         if chat_id not in self.alerts:
             self.alerts[chat_id] = {}
@@ -24,7 +25,8 @@ class AlertManager:
             'last_trade_id': None,
             'last_check': datetime.now(),
             'trade_type': trade_type.lower() if trade_type else None,
-            'min_amount': float(min_amount)
+            'min_amount': float(min_amount),
+            'image_url': image_url
         }
         return True
         
@@ -91,7 +93,8 @@ class AlertManager:
                         alert_data['last_check'] = current_time
                         new_trades[(chat_id, token_address)] = {
                             'trade': latest_trade,
-                            'ticker': alert_data['ticker']
+                            'ticker': alert_data['ticker'],
+                            'image_url': alert_data.get('image_url', '')  # Include image URL in trade data
                         }
                     else:
                         # Update last check time even if no new trade
@@ -126,9 +129,11 @@ class AlertManager:
         if is_buy:
             amount = float(attributes.get('to_token_amount', '0'))
             price = float(attributes.get('price_to_in_usd', '0'))
+            token_address = attributes.get('to_token_address', '')
         else:
             amount = float(attributes.get('from_token_amount', '0'))
             price = float(attributes.get('price_from_in_usd', '0'))
+            token_address = attributes.get('from_token_address', '')
         
         # Calculate total value in USD
         total_value_usd = amount * price
@@ -161,14 +166,35 @@ class AlertManager:
         
         # Format total value
         formatted_value = f"${total_value_usd:,.2f}"
+
+        # Extract token name and symbol from ticker
+        token_parts = ticker.split(' (')
+        token_name = token_parts[0]
+        token_symbol = token_parts[1].rstrip(')')
         
-        # Build the message
+        # Escape special characters for MarkdownV2
+        def escape_markdown(text):
+            special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+            for char in special_chars:
+                text = text.replace(char, f'\\{char}')
+            return text
+        
+        token_name = escape_markdown(token_name)
+        token_symbol = escape_markdown(token_symbol)
+        formatted_amount = escape_markdown(formatted_amount)
+        formatted_price = escape_markdown(formatted_price)
+        formatted_value = escape_markdown(formatted_value)
+        token_address = escape_markdown(token_address)
+        
+        # Build the message without image URL
         message = (
-            f"{size_label} | {trade_type} Alert!\n"
-            f"Token: {ticker}\n"
-            f"Amount: {formatted_amount} {ticker}\n"
+            f"{trade_type} Alert\\! 🚀\n"
+            f"Token: {token_name} \\({token_symbol}\\)\n"
+            f"`{token_address}`\n"
+            f"Amount: {formatted_amount} {token_symbol}\n"
             f"Price: {formatted_price}\n"
-            f"Total Value: {formatted_value}"
+            f"Total Value: {formatted_value}\n"
+            f"{size_label}"
         )
         
         return message 

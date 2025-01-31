@@ -40,7 +40,21 @@ async def process_alerts(application: Application):
                 for (chat_id, token_address), trade_data in new_trades.items():
                     try:
                         message = alert_manager.format_trade_message(trade_data, trade_data['ticker'])
-                        await application.bot.send_message(chat_id=chat_id, text=message)
+                        image_url = trade_data.get('image_url', '')
+                        
+                        if image_url:
+                            await application.bot.send_photo(
+                                chat_id=chat_id,
+                                photo=image_url,
+                                caption=message,
+                                parse_mode="MarkdownV2"
+                            )
+                        else:
+                            await application.bot.send_message(
+                                chat_id=chat_id,
+                                text=message,
+                                parse_mode="MarkdownV2"
+                            )
                     except Exception as e:
                         logger.error(f"Error sending alert message: {str(e)}")
                         continue
