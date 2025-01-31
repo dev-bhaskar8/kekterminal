@@ -50,6 +50,13 @@ class AlertManager:
         """Get specific alert details."""
         return self.alerts.get(chat_id, {}).get(token_address)
         
+    def update_alert_image(self, chat_id: int, token_address: str, image_url: str) -> bool:
+        """Update the image URL for an existing alert."""
+        if chat_id in self.alerts and token_address in self.alerts[chat_id]:
+            self.alerts[chat_id][token_address]['image_url'] = image_url
+            return True
+        return False
+        
     async def process_alerts(self, api: GeckoTerminalAPI) -> Dict[Tuple[int, str], Dict]:
         """Process all alerts and return new trades.
         Returns: {(chat_id, token_address): trade_data}

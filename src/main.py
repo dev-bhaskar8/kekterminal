@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler
 from telegram import Update
 
-from src.bot.commands import start, help_command, pools, trending, price, alert, removealert, activealerts
+from src.bot.commands import start, help_command, pools, trending, price, alert, removealert, activealerts, alertimage
 from src.services.alert_manager import AlertManager
 from src.gecko.api import GeckoTerminalAPI
 
@@ -92,6 +92,7 @@ def main():
     application.add_handler(CommandHandler("alert", alert))
     application.add_handler(CommandHandler("removealert", removealert))
     application.add_handler(CommandHandler("activealerts", activealerts))
+    application.add_handler(CommandHandler("alertimage", alertimage))
 
     # Start the alert processing loop
     application.job_queue.run_repeating(process_alerts, interval=10, first=0)

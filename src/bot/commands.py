@@ -68,6 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/price <token_address> - Get detailed price info\n\n"
             "⚡️ Trade Alerts:\n"
             "/alert <token_address> [buy|sell] [min_amount] [ref_code] - Set alerts\n"
+            "/alertimage <token_address> <image_url> - Update alert image\n"
             "/removealert <token_address> - Remove alerts\n"
             "/activealerts - View your active alerts\n"
             "/help - Show this help message\n\n"
@@ -83,7 +84,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• /alert 0x123... buy - Track only buys\n"
             "• /alert 0x123... sell 100 - Track sells of 100+ tokens\n"
             "• /alert 0x123... buy 50 - Track buys of 50+ tokens\n"
-            "• /alert 0x123... buy 50 ABC123 - Track buys with referral code\n\n"
+            "• /alert 0x123... buy 50 ABC123 - Track buys with referral code\n"
+            "• /alertimage 0x123... https://example.com/token.png - Update alert image\n\n"
             "Made with 💙 by KEK Terminal"
         )
         await update.message.reply_text(welcome_message)
@@ -476,4 +478,48 @@ async def activealerts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for token_address, alert_data in alerts.items():
         message += f"• {alert_data['ticker']} (`{token_address}`)\n"
 
-    await update.message.reply_text(message, parse_mode="Markdown") 
+    await update.message.reply_text(message, parse_mode="Markdown")
+
+async def alertimage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update the image URL for an existing alert.
+    Usage: /alertimage <token_address> <image_url>
+    """
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "⚡️ KEK Terminal - Update Alert Image\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "❌ Please provide both token address and image URL.\n"
+            "Usage: /alertimage <token_address> <image_url>"
+        )
+        return
+
+    token_address = context.args[0].lower()
+    image_url = context.args[1]
+
+    # Validate token address format
+    if not token_address.startswith('0x') or len(token_address) != 42:
+        await update.message.reply_text("❌ Invalid token address format. Please use the format: 0x...")
+        return
+
+    # Get alert manager
+    alert_manager = context.application.bot_data.get('alert_manager')
+    if not alert_manager:
+        await update.message.reply_text("❌ Alert system not initialized.")
+        return
+
+    # Get existing alert
+    alert = alert_manager.get_alert(update.effective_chat.id, token_address)
+    if not alert:
+        await update.message.reply_text("❌ No active alert found for this token.")
+        return
+
+    # Update image URL
+    success = alert_manager.update_alert_image(update.effective_chat.id, token_address, image_url)
+    if success:
+        await update.message.reply_text(
+            f"✅ Alert image updated successfully!\n"
+            f"Token: {alert['ticker']}\n"
+            f"New Image URL: {image_url}"
+        )
+    else:
+        await update.message.reply_text("❌ Failed to update alert image.") 
