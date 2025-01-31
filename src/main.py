@@ -39,7 +39,7 @@ async def process_alerts(application: Application):
                 
                 for (chat_id, token_address), trade_data in new_trades.items():
                     try:
-                        message = alert_manager.format_trade_message(trade_data, trade_data['ticker'])
+                        message, reply_markup = alert_manager.format_trade_message(trade_data, trade_data['ticker'])
                         image_url = trade_data.get('image_url', '')
                         
                         if image_url:
@@ -47,13 +47,15 @@ async def process_alerts(application: Application):
                                 chat_id=chat_id,
                                 photo=image_url,
                                 caption=message,
-                                parse_mode="MarkdownV2"
+                                parse_mode="MarkdownV2",
+                                reply_markup=reply_markup
                             )
                         else:
                             await application.bot.send_message(
                                 chat_id=chat_id,
                                 text=message,
-                                parse_mode="MarkdownV2"
+                                parse_mode="MarkdownV2",
+                                reply_markup=reply_markup
                             )
                     except Exception as e:
                         logger.error(f"Error sending alert message: {str(e)}")

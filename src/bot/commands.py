@@ -67,7 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/pools - List of top Ronin pools\n"
             "/price <token_address> - Get detailed price info\n\n"
             "⚡️ Trade Alerts:\n"
-            "/alert <token_address> [buy|sell] [min_amount] - Set alerts\n"
+            "/alert <token_address> [buy|sell] [min_amount] [ref_code] - Set alerts\n"
             "/removealert <token_address> - Remove alerts\n"
             "/activealerts - View your active alerts\n"
             "/help - Show this help message\n\n"
@@ -82,15 +82,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• /alert 0x123... - Track all trades\n"
             "• /alert 0x123... buy - Track only buys\n"
             "• /alert 0x123... sell 100 - Track sells of 100+ tokens\n"
-            "• /alert 0x123... buy 50 - Track buys of 50+ tokens\n\n"
-            "💡 Alert Features:\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "• Auto-fetches token name and symbol\n"
-            "• Includes token image in alerts\n"
-            "• Shows trade size category\n"
-            "• Monitors most liquid pool\n"
-            "• Real-time price and value\n\n"
-            "Made with 💜 by KEK Terminal"
+            "• /alert 0x123... buy 50 - Track buys of 50+ tokens\n"
+            "• /alert 0x123... buy 50 ABC123 - Track buys with referral code\n\n"
+            "Made with 💙 by KEK Terminal"
         )
         await update.message.reply_text(welcome_message)
         logger.debug("Start command response sent")
@@ -328,86 +322,118 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message)
 
 async def alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Set up an alert for a token."""
+    """Set an alert for a token.
+    Usage: /alert <token_address> [buy|sell] [min_amount] [ref_code]
+    Examples:
+    /alert 0x123... - Track all trades
+    /alert 0x123... buy - Track only buys
+    /alert 0x123... sell 100 - Track sells of 100+ tokens
+    /alert 0x123... buy 50 - Track buys of 50+ tokens
+    /alert 0x123... buy 50 ABC123 - Track buys of 50+ tokens with referral code ABC123
+    """
     if not context.args:
         await update.message.reply_text(
-            "⚡️ KEK Terminal - Trade Alerts\n"
+            "⚡️ KEK Terminal - Alert Setup\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "❌ Please provide the token address.\n"
-            "Usage: /alert <token_address> [buy|sell] [min_amount]"
+            "❌ Please provide a token address.\n"
+            "Usage: /alert <token_address> [buy|sell] [min_amount] [ref_code]\n\n"
+            "Examples:\n"
+            "• /alert 0x123... - Track all trades\n"
+            "• /alert 0x123... buy - Track only buys\n"
+            "• /alert 0x123... sell 100 - Track sells of 100+ tokens\n"
+            "• /alert 0x123... buy 50 - Track buys of 50+ tokens\n"
+            "• /alert 0x123... buy 50 ABC123 - Track buys with referral code"
         )
         return
 
     token_address = context.args[0].lower()
-    trade_type = context.args[1].lower() if len(context.args) > 1 else None
-    min_amount = float(context.args[2]) if len(context.args) > 2 else 0
+    trade_type = None
+    min_amount = 0
+    ref_code = None
 
-    # Remove ronin_ prefix if present
-    if token_address.startswith('ronin_'):
-        token_address = token_address[6:]
+    # Parse optional parameters
+    if len(context.args) > 1:
+        trade_type = context.args[1].lower()
+        if trade_type not in ['buy', 'sell']:
+            trade_type = None
+            try:
+                min_amount = float(context.args[1])
+            except ValueError:
+                ref_code = context.args[1] if len(context.args[1]) <= 10 else None
 
-    # Get alert manager from bot data
-    alert_manager = context.application.bot_data.get('alert_manager')
-    if not alert_manager:
-        await update.message.reply_text("❌ Alert system is not initialized.")
+    if len(context.args) > 2:
+        if not min_amount:
+            try:
+                min_amount = float(context.args[2])
+            except ValueError:
+                ref_code = context.args[2] if len(context.args[2]) <= 10 else None
+
+    if len(context.args) > 3 and not ref_code:
+        ref_code = context.args[3] if len(context.args[3]) <= 10 else None
+
+    # Validate token address format
+    if not token_address.startswith('0x') or len(token_address) != 42:
+        await update.message.reply_text("❌ Invalid token address format. Please use the format: 0x...")
         return
 
-    async with GeckoTerminalAPI() as api:
-        # Get token info to fetch name, symbol and image URL
-        token_info = await api.get_token_info(token_address)
-        if not token_info or 'data' not in token_info:
-            await update.message.reply_text("❌ Failed to fetch token information.")
-            return
+    try:
+        async with GeckoTerminalAPI() as api:
+            # Get token info
+            token_info = await api.get_token_info(token_address)
+            if not token_info or 'data' not in token_info:
+                await update.message.reply_text("❌ Token not found or error fetching token info.")
+                return
 
-        token_data = token_info['data']['attributes']
-        token_name = token_data.get('name', '')
-        token_symbol = token_data.get('symbol', '')
-        image_url = token_data.get('image_url')
+            token_data = token_info['data']
+            token_attributes = token_data['attributes']
+            token_name = token_attributes.get('name', 'Unknown')
+            token_symbol = token_attributes.get('symbol', 'Unknown')
+            token_image = token_attributes.get('image_url')
 
-        # Format the token display name
-        ticker = f"{token_name} ({token_symbol})"
+            # Get most liquid pool
+            pools = await api.get_token_pools(token_address)
+            if not pools or 'data' not in pools or not pools['data']:
+                await update.message.reply_text("❌ No trading pools found for this token.")
+                return
 
-        # Get token pools to find the most liquid one
-        pools_data = await api.get_token_pools(token_address)
-        if not pools_data or 'data' not in pools_data or not pools_data['data']:
-            await update.message.reply_text("❌ Failed to find pools for this token.")
-            return
+            # Get the most liquid pool
+            most_liquid_pool = pools['data'][0]
+            pool_address = most_liquid_pool['id']
 
-        # Find the most liquid pool
-        most_liquid_pool = None
-        highest_liquidity = 0
-        for pool in pools_data['data']:
-            liquidity = float(pool['attributes'].get('reserve_in_usd', 0))
-            if liquidity > highest_liquidity:
-                highest_liquidity = liquidity
-                most_liquid_pool = pool
+            # Add alert
+            alert_manager = context.application.bot_data.get('alert_manager')
+            if not alert_manager:
+                await update.message.reply_text("❌ Alert system not initialized.")
+                return
 
-        if not most_liquid_pool:
-            await update.message.reply_text("❌ No valid pool found for this token.")
-            return
+            ticker = f"{token_name} ({token_symbol})"
+            success = alert_manager.add_alert(
+                update.effective_chat.id,
+                token_address,
+                ticker,
+                pool_address,
+                trade_type,
+                min_amount,
+                token_image,
+                ref_code
+            )
 
-        pool_address = most_liquid_pool['id'].replace('ronin_', '')
+            if success:
+                alert_type = f"{trade_type.upper()} trades" if trade_type else "ALL trades"
+                amount_text = f" of {min_amount}+ tokens" if min_amount > 0 else ""
+                ref_text = f"\nReferral Code: {ref_code}" if ref_code else ""
+                
+                await update.message.reply_text(
+                    f"✅ Alert set for {ticker}\n"
+                    f"Type: {alert_type}{amount_text}\n"
+                    f"Pool: {pool_address}{ref_text}"
+                )
+            else:
+                await update.message.reply_text("❌ Failed to set alert.")
 
-        # Add the alert with image URL
-        alert_manager.add_alert(
-            update.effective_chat.id,
-            token_address,
-            ticker,
-            pool_address,
-            trade_type,
-            min_amount,
-            image_url
-        )
-
-        # Format response message
-        trade_type_msg = f" ({trade_type.upper()} only)" if trade_type else ""
-        min_amount_msg = f" (min. {min_amount} {token_symbol})" if min_amount > 0 else ""
-        
-        await update.message.reply_text(
-            f"✅ Alert set for {ticker}{trade_type_msg}{min_amount_msg}\n"
-            f"Token Address: {token_address}\n"
-            f"Pool Address: {pool_address}"
-        )
+    except Exception as e:
+        logger.error(f"Error setting alert: {str(e)}")
+        await update.message.reply_text("❌ An error occurred while setting the alert.")
 
 async def removealert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove an alert for a token."""

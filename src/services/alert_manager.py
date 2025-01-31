@@ -1,20 +1,22 @@
 import logging
 from typing import Dict, Optional, Tuple
 from datetime import datetime
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from src.gecko.api import GeckoTerminalAPI
 
 logger = logging.getLogger(__name__)
 
 class AlertManager:
     def __init__(self):
-        # Structure: {chat_id: {token_address: {'ticker': str, 'pool_address': str, 'last_trade_id': str, 'last_check': timestamp, 'trade_type': str, 'min_amount': float, 'image_url': str}}}
+        # Structure: {chat_id: {token_address: {'ticker': str, 'pool_address': str, 'last_trade_id': str, 'last_check': timestamp, 'trade_type': str, 'min_amount': float, 'image_url': str, 'ref_code': str}}}
         self.alerts = {}
         
-    def add_alert(self, chat_id: int, token_address: str, ticker: str, pool_address: str, trade_type: str = None, min_amount: float = 0, image_url: str = None) -> bool:
+    def add_alert(self, chat_id: int, token_address: str, ticker: str, pool_address: str, trade_type: str = None, min_amount: float = 0, image_url: str = None, ref_code: str = None) -> bool:
         """Add a new alert for a token in a chat.
         trade_type: 'buy', 'sell', or None (for both)
         min_amount: minimum trade amount to report (0 for all trades)
         image_url: URL of the token's image
+        ref_code: Optional referral code for the trade button
         """
         if chat_id not in self.alerts:
             self.alerts[chat_id] = {}
@@ -26,7 +28,8 @@ class AlertManager:
             'last_check': datetime.now(),
             'trade_type': trade_type.lower() if trade_type else None,
             'min_amount': float(min_amount),
-            'image_url': image_url
+            'image_url': image_url,
+            'ref_code': ref_code
         }
         return True
         
@@ -117,8 +120,8 @@ class AlertManager:
         else:  # $2,001+
             return "🐋 Whale"
 
-    def format_trade_message(self, trade_data: Dict, ticker: str) -> str:
-        """Format trade message with size labels."""
+    def format_trade_message(self, trade_data: Dict, ticker: str) -> Tuple[str, InlineKeyboardMarkup]:
+        """Format trade message with size labels and return message and keyboard markup."""
         trade = trade_data['trade']
         attributes = trade['attributes']
         
@@ -196,5 +199,18 @@ class AlertManager:
             f"Total Value: {formatted_value}\n"
             f"{size_label}"
         )
+
+        # Get referral code from trade data
+        ref_code = trade_data.get('ref_code', 'XXXX')
+        trade_url = f"https://t.me/ronin_kek_bot?start={ref_code}"
+
+        # Create inline keyboard with buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Chart", url=f"https://geckoterminal.com/ronin/tokens/{token_address}"),
+                InlineKeyboardButton("💰 Trade", url=trade_url)
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        return message 
+        return message, reply_markup 
